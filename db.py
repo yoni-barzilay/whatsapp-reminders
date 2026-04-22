@@ -62,10 +62,14 @@ def get_cursor():
 
 
 def run_migration():
-    """Create the appointment_reminders table if it doesn't exist."""
-    with get_cursor() as cursor:
-        cursor.execute(CREATE_TABLE_SQL)
-    logger.info("Migration complete: appointment_reminders table ready")
+    """Verify the appointment_reminders table exists (created externally)."""
+    try:
+        with get_cursor() as cursor:
+            cursor.execute("SELECT 1 FROM appointment_reminders LIMIT 1")
+        logger.info("Migration check: appointment_reminders table ready")
+    except Exception as e:
+        logger.warning("appointment_reminders table check failed: %s", e)
+        logger.warning("Please create the table manually (readonly_user lacks CREATE)")
 
 
 def find_lead_by_email(email: str) -> Optional[dict]:
@@ -211,3 +215,4 @@ def get_reminders(
     with get_cursor() as cursor:
         cursor.execute(query, params)
         return cursor.fetchall()
+
