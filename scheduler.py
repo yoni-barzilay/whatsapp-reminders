@@ -1,6 +1,8 @@
 """APScheduler configuration for hourly calendar scanning."""
 
 import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -15,12 +17,27 @@ logger = logging.getLogger(__name__)
 
 scheduler = BackgroundScheduler(timezone=config.TIMEZONE)
 
+QUIET_AFTER = (22, 30)  # No sends after 22:30 Israel time
+QUIET_BEFORE = (8, 0)   # No sends before 08:00 Israel time
+
+
+def _is_quiet_hours() -> bool:
+    """Return True if current Israel time is outside sending window (08:00-22:30)."""
+    now = datetime.now(ZoneInfo(config.TIMEZONE))
+    current = (now.hour, now.minute)
+    return current >= QUIET_AFTER or current < QUIET_BEFORE
+
 
 def scan_and_send_reminders() -> int:
     """Scan next 24h of calendar and send WhatsApp reminders.
 
     Returns the number of reminders successfully sent.
     """
+    if _is_quiet_hours():
+        logger.info("Quiet hours (%02d:%02d-%02d:%02d Israel) -- skipping scan",
+                     QUIET_AFTER[0], QUIET_AFTER[1], QUIET_BEFORE[0], QUIET_BEFORE[1])
+        return 0
+
     logger.info("Starting calendar scan for next 24h appointments")
     sent_count = 0
 
@@ -47,25 +64,15 @@ def scan_and_send_reminders() -> int:
 
 
 def _process_appointment(appt) -> bool:
-    """Process a single appointment: match lead, create reminder, send message.
-
-    Returns True if a reminder was successfully sent, False if skipped.
-    """
-    # Check for duplicate
     if db.reminder_exists(appt.event_id):
         logger.debug("Reminder already exists for event %s, skipping", appt.event_id)
         return False
 
-    # Match attendee to a Lead
     lead = db.find_lead_by_email(appt.attendee_email)
     if lead is None:
         lead = db.find_lead_by_name(appt.attendee_name)
     if lead is None:
-        logger.warning(
-            "No lead found for attendee %s (%s), skipping",
-            appt.attendee_name,
-            appt.attendee_email,
-        )
+        logger.warning("No lead found for attendee %s (%s), skipping", appt.attendee_name, appt.attendee_email)
         return False
 
     phone = normalize_phone(lead["Phone"])
@@ -75,22 +82,16 @@ def _process_appointment(appt) -> bool:
 
     name = f"{lead['First_name']} {lead['Last_name']}".strip()
 
-    # Insert reminder record
     reminder_id = db.insert_reminder(
-        outlook_event_id=appt.event_id,
-        lead_id=lead["ID"],
-        customer_phone=phone,
-        customer_name=name,
-        appointment_time=appt.start_time,
-        appointment_subject=appt.subject,
+        outlook_event_id=appt.event_id, lead_id=lead["ID"],
+        customer_phone=phone, customer_name=name,
+        appointment_time=appt.start_time, appointment_subject=appt.subject,
     )
 
-    # Build and send WhatsApp message
     payload = build_reminder_message(
-        recipient_phone=phone,
-        customer_name=name,
+        recipient_phone=phone, customer_name=name,
         appointment_time=appt.start_time,
-        appointment_subject=appt.subject or "פגישה עם SafeShare",
+        appointment_subject=appt.subject or "\u05e4\u05d2\u05d9\u05e9\u05d4 \u05e2\u05dd SafeShare",
         reminder_id=reminder_id,
     )
 
@@ -106,7 +107,9 @@ def _process_appointment(appt) -> bool:
 
 
 def retry_failed_reminders() -> int:
-    """Retry sending reminders that previously failed."""
+    if _is_quiet_hours():
+        return 0
+
     failed = db.get_failed_reminders()
     if not failed:
         return 0
@@ -120,7 +123,7 @@ def retry_failed_reminders() -> int:
                 recipient_phone=reminder["customer_phone"],
                 customer_name=reminder["customer_name"],
                 appointment_time=reminder["appointment_time"],
-                appointment_subject=reminder["appointment_subject"] or "פגישה עם SafeShare",
+                appointment_subject=reminder["appointment_subject"] or "\u05e4\u05d2\u05d9\u05e9\u05d4 \u05e2\u05dd SafeShare",
                 reminder_id=reminder["id"],
             )
             msg_id = send_interactive_message(payload)
@@ -134,24 +137,15 @@ def retry_failed_reminders() -> int:
 
 
 def start_scheduler():
-    """Start the background scheduler with hourly scan and retry jobs."""
-    # Main scan: every hour
     scheduler.add_job(
         scan_and_send_reminders,
         trigger=IntervalTrigger(hours=1, timezone=config.TIMEZONE),
-        id="hourly_scan",
-        name="Hourly calendar scan (24h window)",
-        replace_existing=True,
+        id="hourly_scan", name="Hourly calendar scan (24h window)", replace_existing=True,
     )
-
-    # Retry failed: every 30 minutes
     scheduler.add_job(
         retry_failed_reminders,
         trigger=IntervalTrigger(minutes=30, timezone=config.TIMEZONE),
-        id="retry_failed",
-        name="Retry failed reminders",
-        replace_existing=True,
+        id="retry_failed", name="Retry failed reminders", replace_existing=True,
     )
-
     scheduler.start()
     logger.info("Scheduler started: scan every 1h, retry every 30m (%s)", config.TIMEZONE)
