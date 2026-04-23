@@ -22,20 +22,33 @@ QUIET_BEFORE = (8, 0)   # No sends before 08:00 Israel time
 
 
 def _is_quiet_hours() -> bool:
-    """Return True if current Israel time is outside sending window (08:00-22:30)."""
+    """Return True if current Israel time is outside sending window.
+
+    Schedule:
+      Sun-Thu: 08:00-22:30
+      Friday:  off all day (Shabbat)
+      Saturday: after 20:00 only
+    """
     now = datetime.now(ZoneInfo(config.TIMEZONE))
     current = (now.hour, now.minute)
+    weekday = now.weekday()  # 0=Mon, 4=Fri, 5=Sat, 6=Sun
+
+    # Friday (4) - no sends all day
+    if weekday == 4:
+        return True
+
+    # Saturday (5) - only after 20:00
+    if weekday == 5:
+        return current < (20, 0) or current >= QUIET_AFTER
+
+    # Sun-Thu - normal 08:00-22:30 window
     return current >= QUIET_AFTER or current < QUIET_BEFORE
 
 
 def scan_and_send_reminders() -> int:
-    """Scan next 24h of calendar and send WhatsApp reminders.
-
-    Returns the number of reminders successfully sent.
-    """
+    """Scan next 24h of calendar and send WhatsApp reminders."""
     if _is_quiet_hours():
-        logger.info("Quiet hours (%02d:%02d-%02d:%02d Israel) -- skipping scan",
-                     QUIET_AFTER[0], QUIET_AFTER[1], QUIET_BEFORE[0], QUIET_BEFORE[1])
+        logger.info("Quiet hours -- skipping scan")
         return 0
 
     logger.info("Starting calendar scan for next 24h appointments")
