@@ -73,8 +73,20 @@ def _process_webhook(body: dict):
         for change in entry.get("changes", []):
             value = change.get("value", {})
             for message in value.get("messages", []):
-                if message.get("type") == "interactive":
+                msg_type = message.get("type")
+                if msg_type == "interactive":
                     _handle_button_reply(message)
+                elif msg_type == "button":
+                    _handle_template_button_reply(message)
+
+
+def _handle_template_button_reply(message: dict):
+    """Handle a quick reply button click from a template message."""
+    button = message.get("button", {})
+    payload = button.get("payload", "")
+    sender_phone = message.get("from", "")
+    if payload:
+        _process_button_action(payload, sender_phone)
 
 
 def _handle_button_reply(message: dict):
@@ -82,10 +94,12 @@ def _handle_button_reply(message: dict):
     button_reply = interactive.get("button_reply", {})
     button_id = button_reply.get("id", "")
     sender_phone = message.get("from", "")
+    if button_id:
+        _process_button_action(button_id, sender_phone)
 
-    if not button_id:
-        return
 
+def _process_button_action(button_id: str, sender_phone: str):
+    """Common handler for both interactive and template button clicks."""
     parts = button_id.split("_", 1)
     if len(parts) != 2:
         logger.warning("Unknown button ID format: %s", button_id)
@@ -184,3 +198,4 @@ application = create_app()
 
 if __name__ == "__main__":
     application.run(host="0.0.0.0", port=config.PORT, debug=False)
+
