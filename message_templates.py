@@ -7,6 +7,9 @@ import config
 
 TIMEZONE = ZoneInfo(config.TIMEZONE)
 
+TEMPLATE_NAME = "appointment_reminder_3"
+TEMPLATE_LANGUAGE = "he"
+
 
 def _format_datetime(dt: datetime) -> tuple[str, str]:
     """Return (date_str, time_str) formatted for display."""
@@ -23,48 +26,43 @@ def build_reminder_message(
     appointment_subject: str,
     reminder_id: int,
 ) -> dict:
-    """Build the interactive button reminder message payload."""
+    """Build the template-based reminder message payload."""
     date_str, time_str = _format_datetime(appointment_time)
-
-    body_text = (
-        f"\u05e9\u05dc\u05d5\u05dd {customer_name},\n\n"
-        f"\u05e8\u05e6\u05d9\u05e0\u05d5 \u05dc\u05d4\u05d6\u05db\u05d9\u05e8 \u05dc\u05da \u05e9\u05e0\u05e7\u05d1\u05e2\u05d4 \u05e4\u05d2\u05d9\u05e9\u05d4 \u05e2\u05dd SafeShare:\n\n"
-        f"\U0001f4c5 \u05ea\u05d0\u05e8\u05d9\u05da: {date_str}\n"
-        f"\U0001f550 \u05e9\u05e2\u05d4: {time_str}\n"
-        f"\U0001f4cb \u05e0\u05d5\u05e9\u05d0: {appointment_subject}\n\n"
-        f"\u05e0\u05e9\u05de\u05d7 \u05dc\u05d0\u05e9\u05e8 \u05d0\u05ea \u05d4\u05d2\u05e2\u05ea\u05da."
-    )
 
     return {
         "messaging_product": "whatsapp",
-        "recipient_type": "individual",
         "to": recipient_phone,
-        "type": "interactive",
-        "interactive": {
-            "type": "button",
-            "header": {
-                "type": "text",
-                "text": "SafeShare - \u05ea\u05d6\u05db\u05d5\u05e8\u05ea \u05e4\u05d2\u05d9\u05e9\u05d4",
-            },
-            "body": {"text": body_text},
-            "action": {
-                "buttons": [
-                    {
-                        "type": "reply",
-                        "reply": {
-                            "id": f"confirm_{reminder_id}",
-                            "title": "\u05d0\u05d9\u05e9\u05d5\u05e8 \u2713",
-                        },
-                    },
-                    {
-                        "type": "reply",
-                        "reply": {
-                            "id": f"reschedule_{reminder_id}",
-                            "title": "\u05e7\u05d1\u05d9\u05e2\u05d4 \u05de\u05d7\u05d3\u05e9",
-                        },
-                    },
-                ],
-            },
+        "type": "template",
+        "template": {
+            "name": TEMPLATE_NAME,
+            "language": {"code": TEMPLATE_LANGUAGE},
+            "components": [
+                {
+                    "type": "body",
+                    "parameters": [
+                        {"type": "text", "text": customer_name},
+                        {"type": "text", "text": date_str},
+                        {"type": "text", "text": time_str},
+                        {"type": "text", "text": appointment_subject},
+                    ],
+                },
+                {
+                    "type": "button",
+                    "sub_type": "quick_reply",
+                    "index": "0",
+                    "parameters": [
+                        {"type": "payload", "payload": f"confirm_{reminder_id}"},
+                    ],
+                },
+                {
+                    "type": "button",
+                    "sub_type": "quick_reply",
+                    "index": "1",
+                    "parameters": [
+                        {"type": "payload", "payload": f"reschedule_{reminder_id}"},
+                    ],
+                },
+            ],
         },
     }
 
@@ -79,9 +77,9 @@ def build_confirm_ack(recipient_phone: str, appointment_time: datetime) -> dict:
         "type": "text",
         "text": {
             "body": (
-                f"\u05ea\u05d5\u05d3\u05d4 \u05e2\u05dc \u05d4\u05d0\u05d9\u05e9\u05d5\u05e8! \u2713\n\n"
+                "\u05ea\u05d5\u05d3\u05d4 \u05e2\u05dc \u05d4\u05d0\u05d9\u05e9\u05d5\u05e8! \u2713\n\n"
                 f"\u05e0\u05ea\u05e8\u05d0\u05d4 \u05d1\u05e4\u05d2\u05d9\u05e9\u05d4 \u05d1-{date_str} \u05d1\u05e9\u05e2\u05d4 {time_str}.\n\n"
-                f"\u05d0\u05dd \u05ea\u05e6\u05d8\u05e8\u05da \u05dc\u05e9\u05e0\u05d5\u05ea \u2014 \u05e4\u05e9\u05d5\u05d8 \u05e6\u05d5\u05e8 \u05e7\u05e9\u05e8."
+                "\u05d0\u05dd \u05ea\u05e6\u05d8\u05e8\u05da \u05dc\u05e9\u05e0\u05d5\u05ea \u2014 \u05e4\u05e9\u05d5\u05d8 \u05e6\u05d5\u05e8 \u05e7\u05e9\u05e8."
             )
         },
     }
@@ -95,10 +93,10 @@ def build_reschedule_ack(recipient_phone: str) -> dict:
         "type": "text",
         "text": {
             "body": (
-                f"\u05e7\u05d9\u05d1\u05dc\u05e0\u05d5 \u05d0\u05ea \u05d1\u05e7\u05e9\u05ea\u05da \u05dc\u05ea\u05d9\u05d0\u05d5\u05dd \u05de\u05d7\u05d3\u05e9.\n\n"
-                f"\u05dc\u05e7\u05d1\u05d9\u05e2\u05ea \u05de\u05d5\u05e2\u05d3 \u05d7\u05d3\u05e9 \u05dc\u05d7\u05e6/\u05d9 \u05db\u05d0\u05df:\n"
+                "\u05e7\u05d9\u05d1\u05dc\u05e0\u05d5 \u05d0\u05ea \u05d1\u05e7\u05e9\u05ea\u05da \u05dc\u05ea\u05d9\u05d0\u05d5\u05dd \u05de\u05d7\u05d3\u05e9.\n\n"
+                "\u05dc\u05e7\u05d1\u05d9\u05e2\u05ea \u05de\u05d5\u05e2\u05d3 \u05d7\u05d3\u05e9 \u05dc\u05d7\u05e6/\u05d9 \u05db\u05d0\u05df:\n"
                 f"{config.BOOKING_URL}\n\n"
-                f"\u05d0\u05d5 \u05e9\u05e0\u05e6\u05d9\u05d2 \u05e9\u05dc\u05e0\u05d5 \u05d9\u05d9\u05e6\u05d5\u05e8 \u05d0\u05d9\u05ea\u05da \u05e7\u05e9\u05e8 \u05d1\u05d4\u05e7\u05d3\u05dd."
+                "\u05d0\u05d5 \u05e9\u05e0\u05e6\u05d9\u05d2 \u05e9\u05dc\u05e0\u05d5 \u05d9\u05d9\u05e6\u05d5\u05e8 \u05d0\u05d9\u05ea\u05da \u05e7\u05e9\u05e8 \u05d1\u05d4\u05e7\u05d3\u05dd."
             )
         },
     }
@@ -113,7 +111,6 @@ def build_owner_reschedule_notification(
     """Build the notification message sent to the business owner on reschedule."""
     date_str, time_str = _format_datetime(appointment_time)
 
-    # Format phone for display (e.g., "972544522025" → "054-452-2025")
     display_phone = customer_phone
     if customer_phone.startswith("972") and len(customer_phone) == 12:
         p = "0" + customer_phone[3:]
