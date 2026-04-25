@@ -62,7 +62,7 @@ def get_cursor():
 
 
 def run_migration():
-    """Verify the appointment_reminders table exists (created externally)."""
+    """Verify table exists and apply incremental migrations."""
     try:
         with get_cursor() as cursor:
             cursor.execute("SELECT 1 FROM appointment_reminders LIMIT 1")
@@ -70,6 +70,31 @@ def run_migration():
     except Exception as e:
         logger.warning("appointment_reminders table check failed: %s", e)
         logger.warning("Please create the table manually (readonly_user lacks CREATE)")
+        return
+
+    # Add followup_sent_at column if missing
+    try:
+        with get_cursor() as cursor:
+            cursor.execute(
+                "SELECT followup_sent_at FROM appointment_reminders LIMIT 1"
+            )
+        logger.info("Migration: followup_sent_at column exists")
+    except Exception:
+        try:
+            with get_cursor() as cursor:
+                cursor.execute(
+                    "ALTER TABLE appointment_reminders "
+                    "ADD COLUMN followup_sent_at DATETIME NULL "
+                    "AFTER whatsapp_message_id"
+                )
+            logger.info("Migration: added followup_sent_at column")
+        except Exception as e:
+            logger.warning(
+                "Could not add followup_sent_at column: %s "
+                "(add manually: ALTER TABLE appointment_reminders "
+                "ADD COLUMN followup_sent_at DATETIME NULL AFTER whatsapp_message_id)",
+                e,
+            )
 
 
 def find_lead_by_email(email: str) -> Optional[dict]:
@@ -187,6 +212,29 @@ def get_failed_reminders() -> list[dict]:
             "ORDER BY appointment_time"
         )
         return cursor.fetchall()
+
+
+def get_followup_candidates() -> list[dict]:
+    """Get reminders eligible for a follow-up (sent 12h+ ago, no response, meeting 2h+ away)."""
+    with get_cursor() as cursor:
+        cursor.execute(
+            "SELECT * FROM appointment_reminders "
+            "WHERE status = 'reminder_sent' "
+            "AND followup_sent_at IS NULL "
+            "AND reminder_sent_at <= NOW() - INTERVAL 12 HOUR "
+            "AND appointment_time >= NOW() + INTERVAL 2 HOUR "
+            "ORDER BY appointment_time"
+        )
+        return cursor.fetchall()
+
+
+def update_followup_sent(reminder_id: int):
+    """Mark that a follow-up reminder has been sent."""
+    with get_cursor() as cursor:
+        cursor.execute(
+            "UPDATE appointment_reminders SET followup_sent_at = NOW() WHERE id = %s",
+            (reminder_id,),
+        )
 
 
 def get_reminders(
