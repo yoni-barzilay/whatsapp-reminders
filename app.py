@@ -1,7 +1,19 @@
 """Flask application for WhatsApp appointment reminder service."""
 
 import logging
-import sys
+from functools import wraps
+
+from flask import Flask, jsonify, request
+
+from . import config
+from . import db
+from .whatsapp_client import send_text_message
+from .message_templates import (
+    build_confirm_ack,
+    build_reschedule_ack,
+    build_owner_reschedule_notification,
+)
+from .scheduler import start_scheduler, scan_and_send_reminders
 
 logging.basicConfig(
     level=logging.INFO,
@@ -9,26 +21,6 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
-
-# Import config early and log any missing env var errors
-try:
-    import config
-except Exception as e:
-    logger.critical("CONFIG ERROR: %s", e)
-    print(f"CONFIG ERROR: {e}", file=sys.stderr, flush=True)
-    sys.exit(1)
-
-from functools import wraps
-from flask import Flask, jsonify, request
-
-import db
-from whatsapp_client import send_text_message
-from message_templates import (
-    build_confirm_ack,
-    build_reschedule_ack,
-    build_owner_reschedule_notification,
-)
-from scheduler import start_scheduler, scan_and_send_reminders
 
 app = Flask(__name__)
 
@@ -44,14 +36,16 @@ def require_api_key(f):
     return decorated
 
 
-# -- WhatsApp Webhook --
+# ── WhatsApp Webhook ─────────────────────────────────────────────────────────
 
 
 @app.route("/webhook", methods=["GET"])
 def webhook_verify():
+    """WhatsApp webhook verification (hub.challenge handshake)."""
     mode = request.args.get("hub.mode")
     token = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge")
+
     if mode == "subscribe" and token == config.WHATSAPP_VERIFY_TOKEN:
         logger.info("Webhook verified successfully")
         return challenge, 200
@@ -60,6 +54,8 @@ def webhook_verify():
 
 @app.route("/webhook", methods=["POST"])
 def webhook_handler():
+    """Handle incoming WhatsApp messages (button clicks)."""
+    # Always return 200 to WhatsApp to prevent retries
     try:
         body = request.get_json(silent=True) or {}
         _process_webhook(body)
@@ -69,6 +65,7 @@ def webhook_handler():
 
 
 def _process_webhook(body: dict):
+    """Parse and handle a webhook payload from WhatsApp."""
     for entry in body.get("entry", []):
         for change in entry.get("changes", []):
             value = change.get("value", {})
@@ -85,21 +82,33 @@ def _handle_template_button_reply(message: dict):
     button = message.get("button", {})
     payload = button.get("payload", "")
     sender_phone = message.get("from", "")
-    if payload:
-        _process_button_action(payload, sender_phone)
+
+    if not payload:
+        return
+
+    _process_button_action(payload, sender_phone)
 
 
 def _handle_button_reply(message: dict):
+    """Handle a button reply from an interactive message."""
     interactive = message.get("interactive", {})
     button_reply = interactive.get("button_reply", {})
     button_id = button_reply.get("id", "")
     sender_phone = message.get("from", "")
-    if button_id:
-        _process_button_action(button_id, sender_phone)
+
+    if not button_id:
+        return
+
+    _process_button_action(button_id, sender_phone)
 
 
 def _process_button_action(button_id: str, sender_phone: str):
     """Common handler for both interactive and template button clicks."""
+
+    if not button_id:
+        return
+
+    # Parse button ID: "confirm_123" or "reschedule_123"
     parts = button_id.split("_", 1)
     if len(parts) != 2:
         logger.warning("Unknown button ID format: %s", button_id)
@@ -117,8 +126,13 @@ def _process_button_action(button_id: str, sender_phone: str):
         logger.warning("Reminder #%d not found", reminder_id)
         return
 
-    if reminder["status"] in ("confirmed", "reschedule_requested"):
-        logger.debug("Reminder #%d already %s, ignoring", reminder_id, reminder["status"])
+    # Skip if same action repeated (idempotent), but allow changing mind
+    current = reminder["status"]
+    if action == "confirm" and current == "confirmed":
+        logger.debug("Reminder #%d already confirmed, ignoring", reminder_id)
+        return
+    if action == "reschedule" and current == "reschedule_requested":
+        logger.debug("Reminder #%d already reschedule_requested, ignoring", reminder_id)
         return
 
     if action == "confirm":
@@ -129,8 +143,12 @@ def _process_button_action(button_id: str, sender_phone: str):
 
     elif action == "reschedule":
         db.update_reminder_status(reminder_id, "reschedule_requested")
+
+        # Send Calendly link to client
         ack = build_reschedule_ack(sender_phone)
         send_text_message(ack)
+
+        # Notify the business owner
         notification = build_owner_reschedule_notification(
             customer_name=reminder["customer_name"],
             customer_phone=reminder["customer_phone"],
@@ -138,18 +156,19 @@ def _process_button_action(button_id: str, sender_phone: str):
             appointment_subject=reminder["appointment_subject"] or "",
         )
         send_text_message(notification)
-        logger.info("Reminder #%d -- client requested reschedule", reminder_id)
+        logger.info("Reminder #%d — client requested reschedule", reminder_id)
 
     else:
         logger.warning("Unknown action '%s' in button ID: %s", action, button_id)
 
 
-# -- Admin API --
+# ── Admin API ────────────────────────────────────────────────────────────────
 
 
 @app.route("/api/scan-calendar", methods=["POST"])
 @require_api_key
 def manual_scan():
+    """Manually trigger a calendar scan."""
     count = scan_and_send_reminders()
     return jsonify({"status": "ok", "reminders_sent": count})
 
@@ -157,21 +176,51 @@ def manual_scan():
 @app.route("/api/reminders", methods=["GET"])
 @require_api_key
 def list_reminders():
+    """List reminders with optional filters."""
     status = request.args.get("status")
     date_from = request.args.get("date_from")
     date_to = request.args.get("date_to")
     limit = request.args.get("limit", 50, type=int)
-    reminders = db.get_reminders(status=status, date_from=date_from, date_to=date_to, limit=limit)
+
+    reminders = db.get_reminders(
+        status=status, date_from=date_from, date_to=date_to, limit=limit
+    )
+
+    # Convert datetime objects to ISO strings for JSON
     for r in reminders:
         for key in ("appointment_time", "reminder_sent_at", "response_at", "created_at", "updated_at"):
             if r.get(key) and hasattr(r[key], "isoformat"):
                 r[key] = r[key].isoformat()
+
     return jsonify(reminders)
+
+
+@app.route("/api/reminders/<int:reminder_id>/status", methods=["PATCH"])
+@require_api_key
+def update_reminder_status(reminder_id):
+    """Manually update a reminder's status (e.g. fix accidental clicks)."""
+    data = request.get_json(silent=True) or {}
+    new_status = data.get("status")
+
+    valid = ("pending", "reminder_sent", "confirmed", "reschedule_requested", "failed")
+    if new_status not in valid:
+        return jsonify({"error": f"Invalid status. Must be one of: {valid}"}), 400
+
+    reminder = db.get_reminder_by_id(reminder_id)
+    if not reminder:
+        return jsonify({"error": f"Reminder #{reminder_id} not found"}), 404
+
+    db.update_reminder_status(reminder_id, new_status)
+    logger.info("Reminder #%d status manually changed to '%s'", reminder_id, new_status)
+    return jsonify({"status": "ok", "reminder_id": reminder_id, "new_status": new_status})
 
 
 @app.route("/api/health", methods=["GET"])
 def health_check():
+    """Health check endpoint."""
     checks = {"status": "ok", "service": "whatsapp-reminders"}
+
+    # Check DB connection
     try:
         with db.get_cursor() as cursor:
             cursor.execute("SELECT 1")
@@ -179,23 +228,20 @@ def health_check():
     except Exception as e:
         checks["database"] = f"error: {e}"
         checks["status"] = "degraded"
+
     return jsonify(checks)
 
 
-# -- App Startup --
+# ── App Startup ──────────────────────────────────────────────────────────────
 
 
 def create_app():
-    logger.info("Starting whatsapp-reminders service...")
+    """Application factory."""
     db.run_migration()
     start_scheduler()
-    logger.info("Service ready.")
     return app
 
 
-# gunicorn entry point
-application = create_app()
-
 if __name__ == "__main__":
+    application = create_app()
     application.run(host="0.0.0.0", port=config.PORT, debug=False)
-
