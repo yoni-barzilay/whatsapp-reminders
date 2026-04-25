@@ -5,15 +5,15 @@ from functools import wraps
 
 from flask import Flask, jsonify, request
 
-from . import config
-from . import db
-from .whatsapp_client import send_text_message
-from .message_templates import (
+import config
+import db
+from whatsapp_client import send_text_message
+from message_templates import (
     build_confirm_ack,
     build_reschedule_ack,
     build_owner_reschedule_notification,
 )
-from .scheduler import start_scheduler, scan_and_send_reminders
+from scheduler import start_scheduler, scan_and_send_reminders
 
 logging.basicConfig(
     level=logging.INFO,
@@ -197,7 +197,7 @@ def list_reminders():
 
 @app.route("/api/reminders/<int:reminder_id>/status", methods=["PATCH"])
 @require_api_key
-def update_reminder_status(reminder_id):
+def update_reminder_status_api(reminder_id):
     """Manually update a reminder's status (e.g. fix accidental clicks)."""
     data = request.get_json(silent=True) or {}
     new_status = data.get("status")
@@ -242,6 +242,7 @@ def create_app():
     return app
 
 
+application = create_app()
+
 if __name__ == "__main__":
-    application = create_app()
     application.run(host="0.0.0.0", port=config.PORT, debug=False)
