@@ -149,6 +149,38 @@ def retry_failed_reminders() -> int:
     return retried
 
 
+def send_followup_reminders() -> int:
+    """Send follow-up reminders to clients who haven't responded after 12 hours."""
+    if _is_quiet_hours():
+        return 0
+
+    candidates = db.get_followup_candidates()
+    if not candidates:
+        return 0
+
+    logger.info("Sending follow-up reminders to %d non-responding clients", len(candidates))
+    sent = 0
+
+    for reminder in candidates:
+        try:
+            payload = build_reminder_message(
+                recipient_phone=reminder["customer_phone"],
+                customer_name=reminder["customer_name"],
+                appointment_time=reminder["appointment_time"],
+                appointment_subject=reminder["appointment_subject"] or "\u05e4\u05d2\u05d9\u05e9\u05d4 \u05e2\u05dd SafeShare",
+                reminder_id=reminder["id"],
+            )
+            send_interactive_message(payload)
+            db.update_followup_sent(reminder["id"])
+            sent += 1
+            logger.info("Follow-up sent for reminder #%d to %s", reminder["id"], reminder["customer_phone"])
+        except Exception:
+            logger.exception("Follow-up failed for reminder #%d", reminder["id"])
+
+    logger.info("Follow-up round complete: %d sent", sent)
+    return sent
+
+
 def start_scheduler():
     scheduler.add_job(
         scan_and_send_reminders,
@@ -160,5 +192,11 @@ def start_scheduler():
         trigger=IntervalTrigger(minutes=30, timezone=config.TIMEZONE),
         id="retry_failed", name="Retry failed reminders", replace_existing=True,
     )
+    scheduler.add_job(
+        send_followup_reminders,
+        trigger=IntervalTrigger(minutes=30, timezone=config.TIMEZONE),
+        id="followup_reminders", name="Follow-up reminders for non-responding clients",
+        replace_existing=True,
+    )
     scheduler.start()
-    logger.info("Scheduler started: scan every 1h, retry every 30m (%s)", config.TIMEZONE)
+    logger.info("Scheduler started: scan every 1h, retry every 30m, followup every 30m (%s)", config.TIMEZONE)
