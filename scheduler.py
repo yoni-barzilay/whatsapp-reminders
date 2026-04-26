@@ -15,6 +15,7 @@ from message_templates import build_reminder_message
 
 logger = logging.getLogger(__name__)
 
+UTC = ZoneInfo("UTC")
 scheduler = BackgroundScheduler(timezone=config.TIMEZONE)
 
 QUIET_AFTER = (22, 30)  # No sends after 22:30 Israel time
@@ -95,10 +96,14 @@ def _process_appointment(appt) -> bool:
 
     name = f"{lead['First_name']} {lead['Last_name']}".strip()
 
+    # Normalize to UTC for DB storage — MySQL DATETIME strips tzinfo,
+    # and _format_datetime assumes naive values are UTC.
+    start_utc = appt.start_time.astimezone(UTC).replace(tzinfo=None)
+
     reminder_id = db.insert_reminder(
         outlook_event_id=appt.event_id, lead_id=lead["ID"],
         customer_phone=phone, customer_name=name,
-        appointment_time=appt.start_time, appointment_subject=appt.subject,
+        appointment_time=start_utc, appointment_subject=appt.subject,
     )
 
     payload = build_reminder_message(
