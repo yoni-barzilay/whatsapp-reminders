@@ -104,6 +104,7 @@ def _process_appointment(appt) -> bool:
         outlook_event_id=appt.event_id, lead_id=lead["ID"],
         customer_phone=phone, customer_name=name,
         appointment_time=start_utc, appointment_subject=appt.subject,
+        briefing_eligible=appt.briefing_eligible,
     )
 
     payload = build_reminder_message(

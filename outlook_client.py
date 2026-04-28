@@ -70,21 +70,19 @@ def get_upcoming_appointments() -> list[Appointment]:
 
     appointments = []
     for event in data.get("value", []):
-        # Only process events where the required attendee is invited
         attendee_emails = [
             a.get("emailAddress", {}).get("address", "").lower()
             for a in event.get("attendees", [])
         ]
-        if required not in attendee_emails:
-            continue
+        briefing_eligible = required in attendee_emails
 
         for attendee in event.get("attendees", []):
             email_addr = attendee.get("emailAddress", {})
             attendee_email = email_addr.get("address", "")
             attendee_name = email_addr.get("name", "")
 
-            # Skip the calendar owner and the required attendee themselves
-            if attendee_email.lower() in (config.USER_EMAIL.lower(), required):
+            # Skip the calendar owner
+            if attendee_email.lower() == config.USER_EMAIL.lower():
                 continue
 
             start_dt = _parse_graph_datetime(event["start"])
@@ -98,6 +96,7 @@ def get_upcoming_appointments() -> list[Appointment]:
                     end_time=end_dt,
                     attendee_email=attendee_email,
                     attendee_name=attendee_name,
+                    briefing_eligible=briefing_eligible,
                 )
             )
 

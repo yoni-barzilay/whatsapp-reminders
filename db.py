@@ -97,6 +97,32 @@ def run_migration():
             )
 
 
+    # Add briefing_eligible column if missing
+    try:
+        with get_cursor() as cursor:
+            cursor.execute(
+                "SELECT briefing_eligible FROM appointment_reminders LIMIT 1"
+            )
+        logger.info("Migration: briefing_eligible column exists")
+    except Exception:
+        try:
+            with get_cursor() as cursor:
+                cursor.execute(
+                    "ALTER TABLE appointment_reminders "
+                    "ADD COLUMN briefing_eligible TINYINT NOT NULL DEFAULT 0 "
+                    "AFTER appointment_subject"
+                )
+            logger.info("Migration: added briefing_eligible column")
+        except Exception as e:
+            logger.warning(
+                "Could not add briefing_eligible column: %s "
+                "(add manually: ALTER TABLE appointment_reminders "
+                "ADD COLUMN briefing_eligible TINYINT NOT NULL DEFAULT 0 "
+                "AFTER appointment_subject)",
+                e,
+            )
+
+
 def find_lead_by_email(email: str) -> Optional[dict]:
     """Find a lead by email address. Returns dict or None."""
     with get_cursor() as cursor:
@@ -141,16 +167,17 @@ def insert_reminder(
     customer_name: str,
     appointment_time: datetime,
     appointment_subject: Optional[str],
+    briefing_eligible: bool = False,
 ) -> int:
     """Insert a new reminder record. Returns the new row ID."""
     with get_cursor() as cursor:
         cursor.execute(
             "INSERT INTO appointment_reminders "
             "(outlook_event_id, lead_id, customer_phone, customer_name, "
-            "appointment_time, appointment_subject) "
-            "VALUES (%s, %s, %s, %s, %s, %s)",
+            "appointment_time, appointment_subject, briefing_eligible) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (outlook_event_id, lead_id, customer_phone, customer_name,
-             appointment_time, appointment_subject),
+             appointment_time, appointment_subject, int(briefing_eligible)),
         )
         return cursor.lastrowid
 

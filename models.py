@@ -14,6 +14,7 @@ class Appointment:
     end_time: datetime
     attendee_email: str
     attendee_name: str
+    briefing_eligible: bool = False
 
 
 @dataclass(frozen=True)
