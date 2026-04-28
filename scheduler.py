@@ -79,7 +79,8 @@ def scan_and_send_reminders() -> int:
 
 def _process_appointment(appt) -> bool:
     if db.reminder_exists(appt.event_id):
-        logger.debug("Reminder already exists for event %s, skipping", appt.event_id)
+        # Update briefing_eligible in case it changed (e.g. attendee added/removed)
+        db.update_briefing_eligible(appt.event_id, appt.briefing_eligible)
         return False
 
     lead = db.find_lead_by_email(appt.attendee_email)
@@ -96,14 +97,14 @@ def _process_appointment(appt) -> bool:
 
     name = f"{lead['First_name']} {lead['Last_name']}".strip()
 
-    # Normalize to UTC for DB storage — MySQL DATETIME strips tzinfo,
-    # and _format_datetime assumes naive values are UTC.
-    start_utc = appt.start_time.astimezone(UTC).replace(tzinfo=None)
+    # Store in Israel time — MySQL DATETIME is naive, all times are Israel local
+    israel_tz = ZoneInfo(config.TIMEZONE)
+    start_local = appt.start_time.astimezone(israel_tz).replace(tzinfo=None)
 
     reminder_id = db.insert_reminder(
         outlook_event_id=appt.event_id, lead_id=lead["ID"],
         customer_phone=phone, customer_name=name,
-        appointment_time=start_utc, appointment_subject=appt.subject,
+        appointment_time=start_local, appointment_subject=appt.subject,
         briefing_eligible=appt.briefing_eligible,
     )
 

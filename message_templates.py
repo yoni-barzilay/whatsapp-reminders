@@ -14,8 +14,8 @@ TEMPLATE_LANGUAGE = "he"
 def _format_datetime(dt: datetime) -> tuple[str, str]:
     """Return (date_str, time_str) formatted for display in Israel time."""
     if dt.tzinfo is None:
-        # Naive datetimes (e.g. from MySQL) are stored in UTC
-        dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+        # Naive datetimes from MySQL are stored in Israel time
+        dt = dt.replace(tzinfo=TIMEZONE)
     local_dt = dt.astimezone(TIMEZONE)
     date_str = local_dt.strftime("%d/%m/%Y")
     time_str = local_dt.strftime("%H:%M")

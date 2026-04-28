@@ -37,8 +37,8 @@ CREATE TABLE IF NOT EXISTS appointment_reminders (
 
 
 def get_connection():
-    """Get a new MySQL connection."""
-    return pymysql.connect(
+    """Get a new MySQL connection with Israel timezone."""
+    conn = pymysql.connect(
         host=config.MYSQL_HOST,
         port=config.MYSQL_PORT,
         user=config.MYSQL_USER,
@@ -47,7 +47,9 @@ def get_connection():
         charset="utf8mb4",
         cursorclass=pymysql.cursors.DictCursor,
         autocommit=True,
+        init_command="SET time_zone = '+03:00'",
     )
+    return conn
 
 
 @contextmanager
@@ -158,6 +160,16 @@ def reminder_exists(outlook_event_id: str) -> bool:
             (outlook_event_id,),
         )
         return cursor.fetchone() is not None
+
+
+def update_briefing_eligible(outlook_event_id: str, eligible: bool):
+    """Update briefing_eligible flag for an existing reminder."""
+    with get_cursor() as cursor:
+        cursor.execute(
+            "UPDATE appointment_reminders SET briefing_eligible = %s "
+            "WHERE outlook_event_id = %s",
+            (int(eligible), outlook_event_id),
+        )
 
 
 def insert_reminder(
