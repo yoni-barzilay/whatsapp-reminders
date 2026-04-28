@@ -73,6 +73,7 @@ def get_upcoming_appointments() -> list[Appointment]:
         attendee_emails = [
             a.get("emailAddress", {}).get("address", "").lower()
             for a in event.get("attendees", [])
+            if a.get("emailAddress", {}).get("address", "").lower() != config.USER_EMAIL.lower()
         ]
         briefing_eligible = required in attendee_emails
 
