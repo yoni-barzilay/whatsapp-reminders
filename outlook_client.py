@@ -66,15 +66,25 @@ def get_upcoming_appointments() -> list[Appointment]:
     response.raise_for_status()
     data = response.json()
 
+    required = config.REQUIRED_ATTENDEE.lower()
+
     appointments = []
     for event in data.get("value", []):
+        # Only process events where the required attendee is invited
+        attendee_emails = [
+            a.get("emailAddress", {}).get("address", "").lower()
+            for a in event.get("attendees", [])
+        ]
+        if required not in attendee_emails:
+            continue
+
         for attendee in event.get("attendees", []):
             email_addr = attendee.get("emailAddress", {})
             attendee_email = email_addr.get("address", "")
             attendee_name = email_addr.get("name", "")
 
-            # Skip the calendar owner (yourself)
-            if attendee_email.lower() == config.USER_EMAIL.lower():
+            # Skip the calendar owner and the required attendee themselves
+            if attendee_email.lower() in (config.USER_EMAIL.lower(), required):
                 continue
 
             start_dt = _parse_graph_datetime(event["start"])

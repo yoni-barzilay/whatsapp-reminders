@@ -63,3 +63,6 @@ BOOKING_URL: str = os.environ.get("BOOKING_URL", "https://calendly.com/safeshare
 
 # Your number for reschedule notifications (digits only, no +)
 MY_WHATSAPP_NUMBER: str = os.environ.get("MY_WHATSAPP_NUMBER", "972555537434")
+
+# Only process meetings that include this attendee
+REQUIRED_ATTENDEE: str = os.environ.get("REQUIRED_ATTENDEE", "asi@safeshare.co.il")
