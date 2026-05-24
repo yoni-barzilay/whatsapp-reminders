@@ -179,15 +179,17 @@ def update_reminder_schedule(
     briefing_eligible: bool,
 ):
     """Update time, subject, and briefing_eligible for a rescheduled meeting.
-    Also resets briefing_sent_at so a new briefing is sent for the new date."""
+    Only resets briefing_sent_at when the appointment_time actually changed."""
     with get_cursor() as cursor:
         cursor.execute(
             "UPDATE appointment_reminders "
-            "SET appointment_time = %s, appointment_subject = %s, "
-            "briefing_eligible = %s, briefing_sent_at = NULL "
+            "SET appointment_subject = %s, briefing_eligible = %s, "
+            "briefing_sent_at = CASE WHEN appointment_time != %s THEN NULL "
+            "ELSE briefing_sent_at END, "
+            "appointment_time = %s "
             "WHERE outlook_event_id = %s",
-            (appointment_time, appointment_subject, int(briefing_eligible),
-             outlook_event_id),
+            (appointment_subject, int(briefing_eligible),
+             appointment_time, appointment_time, outlook_event_id),
         )
 
 
