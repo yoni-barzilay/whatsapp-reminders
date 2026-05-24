@@ -172,6 +172,25 @@ def update_briefing_eligible(outlook_event_id: str, eligible: bool):
         )
 
 
+def update_reminder_schedule(
+    outlook_event_id: str,
+    appointment_time: datetime,
+    appointment_subject: Optional[str],
+    briefing_eligible: bool,
+):
+    """Update time, subject, and briefing_eligible for a rescheduled meeting.
+    Also resets briefing_sent_at so a new briefing is sent for the new date."""
+    with get_cursor() as cursor:
+        cursor.execute(
+            "UPDATE appointment_reminders "
+            "SET appointment_time = %s, appointment_subject = %s, "
+            "briefing_eligible = %s, briefing_sent_at = NULL "
+            "WHERE outlook_event_id = %s",
+            (appointment_time, appointment_subject, int(briefing_eligible),
+             outlook_event_id),
+        )
+
+
 def insert_reminder(
     outlook_event_id: str,
     lead_id: Optional[int],
@@ -302,4 +321,5 @@ def get_reminders(
     with get_cursor() as cursor:
         cursor.execute(query, params)
         return cursor.fetchall()
+
 
