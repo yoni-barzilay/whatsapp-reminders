@@ -79,8 +79,12 @@ def scan_and_send_reminders() -> int:
 
 def _process_appointment(appt) -> bool:
     if db.reminder_exists(appt.event_id):
-        # Update briefing_eligible in case it changed (e.g. attendee added/removed)
-        db.update_briefing_eligible(appt.event_id, appt.briefing_eligible)
+        # Sync time, subject, and briefing_eligible (handles rescheduled meetings)
+        israel_tz = ZoneInfo(config.TIMEZONE)
+        start_local = appt.start_time.astimezone(israel_tz).replace(tzinfo=None)
+        db.update_reminder_schedule(
+            appt.event_id, start_local, appt.subject, appt.briefing_eligible,
+        )
         return False
 
     lead = db.find_lead_by_email(appt.attendee_email)
@@ -207,3 +211,4 @@ def start_scheduler():
     )
     scheduler.start()
     logger.info("Scheduler started: scan every 1h, retry every 30m, followup every 30m (%s)", config.TIMEZONE)
+
