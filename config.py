@@ -69,3 +69,7 @@ MY_WHATSAPP_NUMBER: str = os.environ.get("MY_WHATSAPP_NUMBER", "972555537434")
 
 # Only process meetings that include this attendee
 REQUIRED_ATTENDEE: str = os.environ.get("REQUIRED_ATTENDEE", "asi@safeshare.co.il")
+
+# Telegram notifications
+TELEGRAM_BOT_TOKEN: str = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID: str = os.environ.get("TELEGRAM_CHAT_ID", "")

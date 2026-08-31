@@ -13,6 +13,7 @@ from outlook_client import get_upcoming_appointments, normalize_phone
 from whatsapp_client import send_interactive_message
 from message_templates import build_reminder_message
 from email_notifier import notify_invalid_phone
+import telegram_notifier
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,13 @@ def _process_appointment(appt) -> bool:
             raw_phone=lead.get("Phone", ""),
             appointment_subject=appt.subject,
         )
+        telegram_notifier.notify_invalid_phone(
+            lead_id=lead["ID"],
+            lead_name=f"{lead['First_name']} {lead['Last_name']}".strip(),
+            lead_email=lead.get("email", ""),
+            raw_phone=lead.get("Phone", ""),
+            appointment_subject=appt.subject,
+        )
         return False
 
     name = f"{lead['First_name']} {lead['Last_name']}".strip()
@@ -130,6 +138,11 @@ def _process_appointment(appt) -> bool:
     try:
         msg_id = send_interactive_message(payload)
         db.update_reminder_sent(reminder_id, msg_id)
+        telegram_notifier.notify_reminder_sent(
+            customer_name=name, customer_phone=phone,
+            appointment_time=appt.start_time,
+            appointment_subject=appt.subject or "",
+        )
         logger.info("Reminder #%d sent to %s (lead %d)", reminder_id, phone, lead["ID"])
         return True
     except Exception:

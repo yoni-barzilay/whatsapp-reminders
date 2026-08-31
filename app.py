@@ -14,6 +14,7 @@ from message_templates import (
     build_owner_reschedule_notification,
 )
 from scheduler import start_scheduler, scan_and_send_reminders
+import telegram_notifier
 
 logging.basicConfig(
     level=logging.INFO,
@@ -139,6 +140,12 @@ def _process_button_action(button_id: str, sender_phone: str):
         db.update_reminder_status(reminder_id, "confirmed")
         ack = build_confirm_ack(sender_phone, reminder["appointment_time"])
         send_text_message(ack)
+        telegram_notifier.notify_confirmed(
+            customer_name=reminder["customer_name"],
+            customer_phone=reminder["customer_phone"],
+            appointment_time=reminder["appointment_time"],
+            appointment_subject=reminder["appointment_subject"] or "",
+        )
         logger.info("Reminder #%d confirmed by client", reminder_id)
 
     elif action == "reschedule":
@@ -156,6 +163,12 @@ def _process_button_action(button_id: str, sender_phone: str):
             appointment_subject=reminder["appointment_subject"] or "",
         )
         send_text_message(notification)
+        telegram_notifier.notify_reschedule(
+            customer_name=reminder["customer_name"],
+            customer_phone=reminder["customer_phone"],
+            appointment_time=reminder["appointment_time"],
+            appointment_subject=reminder["appointment_subject"] or "",
+        )
         logger.info("Reminder #%d — client requested reschedule", reminder_id)
 
     else:
