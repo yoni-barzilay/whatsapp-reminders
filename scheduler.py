@@ -12,6 +12,7 @@ import db
 from outlook_client import get_upcoming_appointments, normalize_phone
 from whatsapp_client import send_interactive_message
 from message_templates import build_reminder_message
+from email_notifier import notify_invalid_phone
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +98,13 @@ def _process_appointment(appt) -> bool:
     phone = normalize_phone(lead["Phone"])
     if not phone or len(phone) < 10:
         logger.warning("Invalid phone for lead %s: %s", lead["ID"], lead["Phone"])
+        notify_invalid_phone(
+            lead_id=lead["ID"],
+            lead_name=f"{lead['First_name']} {lead['Last_name']}".strip(),
+            lead_email=lead.get("email", ""),
+            raw_phone=lead.get("Phone", ""),
+            appointment_subject=appt.subject,
+        )
         return False
 
     name = f"{lead['First_name']} {lead['Last_name']}".strip()
