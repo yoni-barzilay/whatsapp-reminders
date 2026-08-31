@@ -42,7 +42,7 @@ def _get_access_token() -> str:
 
 
 def get_upcoming_appointments() -> list[Appointment]:
-    """Fetch all calendar events in the next 24 hours from the user's Outlook calendar."""
+    """Fetch all calendar events in the next 24 hours from all configured Outlook calendars."""
     tz = ZoneInfo(config.TIMEZONE)
     now = datetime.now(tz)
     window_end = now + timedelta(hours=24)
@@ -51,60 +51,74 @@ def get_upcoming_appointments() -> list[Appointment]:
     end_str = window_end.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     token = _get_access_token()
-    url = (
-        f"{config.GRAPH_API_URL}/users/{config.USER_EMAIL}/calendarView"
-        f"?startDateTime={start_str}&endDateTime={end_str}"
-        f"&$select=id,subject,start,end,attendees,bodyPreview"
-        f"&$top=50"
-    )
-
-    response = requests.get(
-        url,
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=30,
-    )
-    response.raise_for_status()
-    data = response.json()
-
+    owner_emails = {e.lower() for e in config.USER_EMAILS}
     required = config.REQUIRED_ATTENDEE.lower()
-
+    seen_event_ids: set[str] = set()
     appointments = []
-    for event in data.get("value", []):
-        attendee_emails = [
-            a.get("emailAddress", {}).get("address", "").lower()
-            for a in event.get("attendees", [])
-            if a.get("emailAddress", {}).get("address", "").lower() != config.USER_EMAIL.lower()
-        ]
-        subject = event.get("subject", "")
-        subject_lower = subject.lower()
-        title_match = "safeshare" in subject_lower or "מוצרים מובנים" in subject
-        briefing_eligible = title_match and required in attendee_emails
 
-        for attendee in event.get("attendees", []):
-            email_addr = attendee.get("emailAddress", {})
-            attendee_email = email_addr.get("address", "")
-            attendee_name = email_addr.get("name", "")
+    for user_email in config.USER_EMAILS:
+        url = (
+            f"{config.GRAPH_API_URL}/users/{user_email}/calendarView"
+            f"?startDateTime={start_str}&endDateTime={end_str}"
+            f"&$select=id,subject,start,end,attendees,bodyPreview"
+            f"&$top=50"
+        )
 
-            # Skip the calendar owner
-            if attendee_email.lower() == config.USER_EMAIL.lower():
-                continue
-
-            start_dt = _parse_graph_datetime(event["start"])
-            end_dt = _parse_graph_datetime(event["end"])
-
-            appointments.append(
-                Appointment(
-                    event_id=event["id"],
-                    subject=event.get("subject", ""),
-                    start_time=start_dt,
-                    end_time=end_dt,
-                    attendee_email=attendee_email,
-                    attendee_name=attendee_name,
-                    briefing_eligible=briefing_eligible,
-                )
+        try:
+            response = requests.get(
+                url,
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=30,
             )
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            logger.error("Failed to fetch calendar for %s: %s", user_email, exc)
+            continue
 
-    logger.info("Found %d attendees in tomorrow's appointments", len(appointments))
+        data = response.json()
+
+        for event in data.get("value", []):
+            attendee_emails = [
+                a.get("emailAddress", {}).get("address", "").lower()
+                for a in event.get("attendees", [])
+                if a.get("emailAddress", {}).get("address", "").lower() not in owner_emails
+            ]
+            subject = event.get("subject", "")
+            subject_lower = subject.lower()
+            title_match = "safeshare" in subject_lower or "\u05de\u05d5\u05e6\u05e8\u05d9\u05dd \u05de\u05d5\u05d1\u05e0\u05d9\u05dd" in subject
+            briefing_eligible = title_match and required in attendee_emails
+
+            for attendee in event.get("attendees", []):
+                email_addr = attendee.get("emailAddress", {})
+                attendee_email = email_addr.get("address", "")
+                attendee_name = email_addr.get("name", "")
+
+                # Skip any of the calendar owners
+                if attendee_email.lower() in owner_emails:
+                    continue
+
+                # Deduplicate: same event can appear on multiple calendars
+                dedup_key = f"{attendee_email.lower()}|{event.get('subject','')}|{event['start']['dateTime']}"
+                if dedup_key in seen_event_ids:
+                    continue
+                seen_event_ids.add(dedup_key)
+
+                start_dt = _parse_graph_datetime(event["start"])
+                end_dt = _parse_graph_datetime(event["end"])
+
+                appointments.append(
+                    Appointment(
+                        event_id=event["id"],
+                        subject=event.get("subject", ""),
+                        start_time=start_dt,
+                        end_time=end_dt,
+                        attendee_email=attendee_email,
+                        attendee_name=attendee_name,
+                        briefing_eligible=briefing_eligible,
+                    )
+                )
+
+    logger.info("Found %d attendees across %d calendars", len(appointments), len(config.USER_EMAILS))
     return appointments
 
 
@@ -135,21 +149,37 @@ def _parse_graph_datetime(dt_obj: dict) -> datetime:
 def normalize_phone(raw: str) -> str:
     """Normalize an Israeli phone number to WhatsApp format (digits only, 972 prefix).
 
+    Returns empty string if the number can't be resolved to a valid Israeli mobile.
+
     Examples:
-        "054-452-2025"    → "972544522025"
-        "0544522025"      → "972544522025"
-        "+972544522025"   → "972544522025"
-        "972-54-452-2025" → "972544522025"
+        "054-452-2025"    -> "972544522025"
+        "0544522025"      -> "972544522025"
+        "+972544522025"   -> "972544522025"
+        "972-54-452-2025" -> "972544522025"
+        "bad-number"      -> ""
     """
+    if not raw or not raw.strip():
+        return ""
+
     digits = re.sub(r"\D", "", raw)
 
     # 05X-XXXXXXX format (10 digits starting with 0)
     if digits.startswith("0") and len(digits) == 10:
-        return "972" + digits[1:]
+        digits = "972" + digits[1:]
 
     # Already has 972 prefix (12 digits)
-    if digits.startswith("972") and len(digits) == 12:
-        return digits
+    elif digits.startswith("972") and len(digits) == 12:
+        pass  # already correct
 
-    # Fallback: return as-is (best effort)
+    # 9-digit without leading 0 (e.g. "544522025")
+    elif len(digits) == 9 and digits.startswith("5"):
+        digits = "972" + digits
+
+    else:
+        return ""
+
+    # Final validation: must be 12 digits, 972 prefix, mobile prefix (5X)
+    if len(digits) != 12 or not digits.startswith("9725"):
+        return ""
+
     return digits

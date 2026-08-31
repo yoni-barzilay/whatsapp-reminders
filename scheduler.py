@@ -131,6 +131,11 @@ def _process_appointment(appt) -> bool:
 
 
 def retry_failed_reminders() -> int:
+    """Retry sending reminders that previously failed.
+
+    Skips reminders whose appointment has already passed or whose phone
+    number is invalid (would never succeed).
+    """
     if _is_quiet_hours():
         return 0
 
@@ -138,24 +143,44 @@ def retry_failed_reminders() -> int:
     if not failed:
         return 0
 
+    now = datetime.now(ZoneInfo(config.TIMEZONE))
     logger.info("Retrying %d failed reminders", len(failed))
     retried = 0
 
     for reminder in failed:
+        rid = reminder["id"]
+
+        # Skip reminders for appointments that already passed
+        appt_time = reminder["appointment_time"]
+        if appt_time.tzinfo is None:
+            appt_time = appt_time.replace(tzinfo=ZoneInfo(config.TIMEZONE))
+        if appt_time < now:
+            logger.info("Reminder #%d appointment already passed, skipping retry", rid)
+            continue
+
+        # Re-validate phone - don't retry permanently bad numbers
+        phone = normalize_phone(reminder["customer_phone"])
+        if not phone:
+            logger.warning(
+                "Reminder #%d has invalid phone '%s', skipping retry",
+                rid, reminder["customer_phone"],
+            )
+            continue
+
         try:
             payload = build_reminder_message(
-                recipient_phone=reminder["customer_phone"],
+                recipient_phone=phone,
                 customer_name=reminder["customer_name"],
                 appointment_time=reminder["appointment_time"],
                 appointment_subject=reminder["appointment_subject"] or "\u05e4\u05d2\u05d9\u05e9\u05d4 \u05e2\u05dd SafeShare",
-                reminder_id=reminder["id"],
+                reminder_id=rid,
             )
             msg_id = send_interactive_message(payload)
-            db.update_reminder_sent(reminder["id"], msg_id)
+            db.update_reminder_sent(rid, msg_id)
             retried += 1
-            logger.info("Retry successful for reminder #%d", reminder["id"])
+            logger.info("Retry successful for reminder #%d", rid)
         except Exception:
-            logger.exception("Retry failed for reminder #%d", reminder["id"])
+            logger.exception("Retry failed for reminder #%d", rid)
 
     return retried
 

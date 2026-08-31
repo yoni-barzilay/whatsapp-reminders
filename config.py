@@ -41,7 +41,10 @@ WHATSAPP_API_URL: str = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/mes
 AZURE_CLIENT_ID: str = _require("AZURE_CLIENT_ID")
 AZURE_CLIENT_SECRET: str = _require("AZURE_CLIENT_SECRET")
 AZURE_TENANT_ID: str = _require("AZURE_TENANT_ID")
-USER_EMAIL: str = _require("USER_EMAIL")
+# USER_EMAIL: comma-separated list of mailboxes to scan for appointments.
+_raw_user_email: str = _require("USER_EMAIL")
+USER_EMAILS: list[str] = [e.strip() for e in _raw_user_email.split(",") if e.strip()]
+USER_EMAIL: str = USER_EMAILS[0]  # backward compat: first entry
 GRAPH_API_URL: str = "https://graph.microsoft.com/v1.0"
 
 # MySQL Database (reuse safeshare-chat's DB)
