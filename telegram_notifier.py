@@ -1,6 +1,7 @@
 """Telegram group notifications for appointment reminder events."""
 
 import logging
+from html import escape
 
 import requests
 
@@ -58,9 +59,9 @@ def notify_confirmed(customer_name: str, customer_phone: str,
 
     text = (
         f"\u2705 <b>Appointment Confirmed</b>\n\n"
-        f"<b>{customer_name}</b> ({phone_display})\n"
+        f"<b>{escape(customer_name)}</b> ({phone_display})\n"
         f"confirmed the meeting on {date_str} at {time_str}\n"
-        f"Subject: {appointment_subject or 'N/A'}"
+        f"Subject: {escape(appointment_subject) or 'N/A'}"
     )
     _send(text)
 
@@ -74,9 +75,9 @@ def notify_reschedule(customer_name: str, customer_phone: str,
 
     text = (
         f"\U0001f514 <b>Reschedule Requested</b>\n\n"
-        f"<b>{customer_name}</b> ({phone_display})\n"
+        f"<b>{escape(customer_name)}</b> ({phone_display})\n"
         f"wants to reschedule the meeting on {date_str} at {time_str}\n"
-        f"Subject: {appointment_subject or 'N/A'}"
+        f"Subject: {escape(appointment_subject) or 'N/A'}"
     )
     _send(text)
 
@@ -90,9 +91,9 @@ def notify_reminder_sent(customer_name: str, customer_phone: str,
 
     text = (
         f"\U0001f4e4 <b>Reminder Sent</b>\n\n"
-        f"<b>{customer_name}</b> ({phone_display})\n"
+        f"<b>{escape(customer_name)}</b> ({phone_display})\n"
         f"Meeting: {date_str} at {time_str}\n"
-        f"Subject: {appointment_subject or 'N/A'}"
+        f"Subject: {escape(appointment_subject) or 'N/A'}"
     )
     _send(text)
 
@@ -102,10 +103,10 @@ def notify_invalid_phone(lead_id: int, lead_name: str, lead_email: str,
     """Notify the group about an invalid phone number."""
     text = (
         f"\u26a0\ufe0f <b>Invalid Phone Number</b>\n\n"
-        f"Lead #{lead_id}: <b>{lead_name}</b>\n"
-        f"Email: {lead_email}\n"
-        f"Phone: <code>{raw_phone}</code>\n"
-        f"Meeting: {appointment_subject or 'N/A'}\n\n"
+        f"Lead #{lead_id}: <b>{escape(lead_name)}</b>\n"
+        f"Email: {escape(lead_email)}\n"
+        f"Phone: <code>{escape(raw_phone)}</code>\n"
+        f"Meeting: {escape(appointment_subject) or 'N/A'}\n\n"
         f"Please update the phone in the CRM."
     )
     _send(text)
