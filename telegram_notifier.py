@@ -9,8 +9,11 @@ import config
 logger = logging.getLogger(__name__)
 
 TELEGRAM_BOT_TOKEN = config.TELEGRAM_BOT_TOKEN
-TELEGRAM_CHAT_ID = config.TELEGRAM_CHAT_ID
+_raw_chat_id = config.TELEGRAM_CHAT_ID.strip().strip('"').strip("'")
+TELEGRAM_CHAT_ID = int(_raw_chat_id) if _raw_chat_id else None
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
+
+logger.info("Telegram chat_id configured: %s (raw env: %r)", TELEGRAM_CHAT_ID, config.TELEGRAM_CHAT_ID)
 
 
 def _send(text: str) -> bool:
@@ -29,6 +32,8 @@ def _send(text: str) -> bool:
             },
             timeout=10,
         )
+        if not resp.ok:
+            logger.error("Telegram API error: %s %s", resp.status_code, resp.text)
         resp.raise_for_status()
         return True
     except Exception:
