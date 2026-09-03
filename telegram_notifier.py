@@ -36,6 +36,7 @@ def _send(text: str) -> bool:
         if not resp.ok:
             logger.error("Telegram API error: %s %s", resp.status_code, resp.text)
         resp.raise_for_status()
+        logger.info("Telegram message sent to chat_id=%s", TELEGRAM_CHAT_ID)
         return True
     except Exception:
         logger.exception("Failed to send Telegram notification")
@@ -50,6 +51,23 @@ def _format_phone(phone: str) -> str:
     return phone
 
 
+def send_test() -> dict:
+    """Send a test message to verify group delivery. Returns API response."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return {"error": "Telegram not configured", "chat_id": TELEGRAM_CHAT_ID}
+
+    text = f"\U0001f9ea <b>Test</b>\n\nchat_id: <code>{TELEGRAM_CHAT_ID}</code>"
+    try:
+        resp = requests.post(
+            f"{TELEGRAM_API}/sendMessage",
+            json={"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"},
+            timeout=10,
+        )
+        return resp.json()
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 def notify_confirmed(customer_name: str, customer_phone: str,
                      appointment_time, appointment_subject: str):
     """Notify the group that a client confirmed their appointment."""
@@ -58,10 +76,11 @@ def notify_confirmed(customer_name: str, customer_phone: str,
     phone_display = _format_phone(customer_phone)
 
     text = (
-        f"\u2705 <b>Appointment Confirmed</b>\n\n"
+        f"\u2705 <b>\u05d0\u05d9\u05e9\u05d5\u05e8 \u05e4\u05d2\u05d9\u05e9\u05d4</b>\n\n"
         f"<b>{escape(customer_name)}</b> ({phone_display})\n"
-        f"confirmed the meeting on {date_str} at {time_str}\n"
-        f"Subject: {escape(appointment_subject) or 'N/A'}"
+        f"\u05d0\u05d9\u05e9\u05e8/\u05d4 \u05d0\u05ea \u05d4\u05e4\u05d2\u05d9\u05e9\u05d4:\n"
+        f"{date_str} \u05d1\u05e9\u05e2\u05d4 {time_str}\n"
+        f"\u05e0\u05d5\u05e9\u05d0: {escape(appointment_subject) or 'N/A'}"
     )
     _send(text)
 
@@ -74,10 +93,11 @@ def notify_reschedule(customer_name: str, customer_phone: str,
     phone_display = _format_phone(customer_phone)
 
     text = (
-        f"\U0001f514 <b>Reschedule Requested</b>\n\n"
+        f"\U0001f514 <b>\u05d1\u05e7\u05e9\u05d4 \u05dc\u05ea\u05d9\u05d0\u05d5\u05dd \u05de\u05d7\u05d3\u05e9</b>\n\n"
         f"<b>{escape(customer_name)}</b> ({phone_display})\n"
-        f"wants to reschedule the meeting on {date_str} at {time_str}\n"
-        f"Subject: {escape(appointment_subject) or 'N/A'}"
+        f"\u05d1\u05d9\u05e7\u05e9/\u05d4 \u05dc\u05ea\u05d0\u05dd \u05de\u05d7\u05d3\u05e9 \u05d0\u05ea \u05d4\u05e4\u05d2\u05d9\u05e9\u05d4:\n"
+        f"{date_str} \u05d1\u05e9\u05e2\u05d4 {time_str}\n"
+        f"\u05e0\u05d5\u05e9\u05d0: {escape(appointment_subject) or 'N/A'}"
     )
     _send(text)
 
@@ -90,10 +110,10 @@ def notify_reminder_sent(customer_name: str, customer_phone: str,
     phone_display = _format_phone(customer_phone)
 
     text = (
-        f"\U0001f4e4 <b>Reminder Sent</b>\n\n"
+        f"\U0001f4e4 <b>\u05ea\u05d6\u05db\u05d5\u05e8\u05ea \u05e0\u05e9\u05dc\u05d7\u05d4</b>\n\n"
         f"<b>{escape(customer_name)}</b> ({phone_display})\n"
-        f"Meeting: {date_str} at {time_str}\n"
-        f"Subject: {escape(appointment_subject) or 'N/A'}"
+        f"\u05e4\u05d2\u05d9\u05e9\u05d4: {date_str} \u05d1\u05e9\u05e2\u05d4 {time_str}\n"
+        f"\u05e0\u05d5\u05e9\u05d0: {escape(appointment_subject) or 'N/A'}"
     )
     _send(text)
 
@@ -102,11 +122,11 @@ def notify_invalid_phone(lead_id: int, lead_name: str, lead_email: str,
                          raw_phone: str, appointment_subject: str = ""):
     """Notify the group about an invalid phone number."""
     text = (
-        f"\u26a0\ufe0f <b>Invalid Phone Number</b>\n\n"
-        f"Lead #{lead_id}: <b>{escape(lead_name)}</b>\n"
-        f"Email: {escape(lead_email)}\n"
-        f"Phone: <code>{escape(raw_phone)}</code>\n"
-        f"Meeting: {escape(appointment_subject) or 'N/A'}\n\n"
-        f"Please update the phone in the CRM."
+        f"\u26a0\ufe0f <b>\u05de\u05e1\u05e4\u05e8 \u05d8\u05dc\u05e4\u05d5\u05df \u05dc\u05d0 \u05ea\u05e7\u05d9\u05df</b>\n\n"
+        f"\u05dc\u05d9\u05d3 #{lead_id}: <b>{escape(lead_name)}</b>\n"
+        f"\u05d0\u05d9\u05de\u05d9\u05d9\u05dc: {escape(lead_email)}\n"
+        f"\u05d8\u05dc\u05e4\u05d5\u05df: <code>{escape(raw_phone)}</code>\n"
+        f"\u05e4\u05d2\u05d9\u05e9\u05d4: {escape(appointment_subject) or 'N/A'}\n\n"
+        f"\u05e0\u05d0 \u05dc\u05e2\u05d3\u05db\u05df \u05d0\u05ea \u05d4\u05d8\u05dc\u05e4\u05d5\u05df \u05d1-CRM."
     )
     _send(text)

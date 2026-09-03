@@ -228,6 +228,14 @@ def update_reminder_status_api(reminder_id):
     return jsonify({"status": "ok", "reminder_id": reminder_id, "new_status": new_status})
 
 
+@app.route("/api/test-telegram", methods=["POST"])
+@require_api_key
+def test_telegram():
+    """Send a test message to the configured Telegram chat."""
+    result = telegram_notifier.send_test()
+    return jsonify(result)
+
+
 @app.route("/api/health", methods=["GET"])
 def health_check():
     """Health check endpoint."""
