@@ -236,6 +236,27 @@ def test_telegram():
     return jsonify(result)
 
 
+@app.route("/api/test-telegram-confirm", methods=["POST"])
+@require_api_key
+def test_telegram_confirm():
+    """Test the notify_confirmed path to verify it goes to the group."""
+    from datetime import datetime
+    try:
+        telegram_notifier.notify_confirmed(
+            customer_name="Test User",
+            customer_phone="972501234567",
+            appointment_time=datetime(2026, 9, 6, 14, 0),
+            appointment_subject="Test <> Safeshare",
+        )
+        return jsonify({
+            "status": "ok",
+            "chat_id_used": telegram_notifier.TELEGRAM_CHAT_ID,
+            "message": "notify_confirmed called successfully",
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+
 @app.route("/api/health", methods=["GET"])
 def health_check():
     """Health check endpoint."""

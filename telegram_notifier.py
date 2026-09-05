@@ -17,29 +17,36 @@ TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 logger.info("Telegram chat_id configured: %s (raw env: %r)", TELEGRAM_CHAT_ID, config.TELEGRAM_CHAT_ID)
 
 
-def _send(text: str) -> bool:
+def _send(text: str, caller: str = "") -> bool:
     """Send an HTML-formatted message to the Telegram group."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         logger.debug("Telegram not configured, skipping notification")
         return False
 
+    logger.info("[TG-SEND] caller=%s chat_id=%s type=%s", caller, TELEGRAM_CHAT_ID, type(TELEGRAM_CHAT_ID).__name__)
     try:
+        payload = {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": text,
+            "parse_mode": "HTML",
+        }
         resp = requests.post(
             f"{TELEGRAM_API}/sendMessage",
-            json={
-                "chat_id": TELEGRAM_CHAT_ID,
-                "text": text,
-                "parse_mode": "HTML",
-            },
+            json=payload,
             timeout=10,
         )
+        data = resp.json()
         if not resp.ok:
-            logger.error("Telegram API error: %s %s", resp.status_code, resp.text)
+            logger.error("[TG-SEND] API error: %s %s", resp.status_code, resp.text)
+        else:
+            # Log where the message actually went
+            chat_info = data.get("result", {}).get("chat", {})
+            logger.info("[TG-SEND] SUCCESS caller=%s -> chat_id=%s chat_type=%s chat_title=%s",
+                        caller, chat_info.get("id"), chat_info.get("type"), chat_info.get("title", "N/A"))
         resp.raise_for_status()
-        logger.info("Telegram message sent to chat_id=%s", TELEGRAM_CHAT_ID)
         return True
     except Exception:
-        logger.exception("Failed to send Telegram notification")
+        logger.exception("[TG-SEND] Failed to send Telegram notification (caller=%s)", caller)
         return False
 
 
@@ -82,7 +89,7 @@ def notify_confirmed(customer_name: str, customer_phone: str,
         f"{date_str} \u05d1\u05e9\u05e2\u05d4 {time_str}\n"
         f"\u05e0\u05d5\u05e9\u05d0: {escape(appointment_subject) or 'N/A'}"
     )
-    _send(text)
+    _send(text, caller="notify_confirmed")
 
 
 def notify_reschedule(customer_name: str, customer_phone: str,
@@ -99,7 +106,7 @@ def notify_reschedule(customer_name: str, customer_phone: str,
         f"{date_str} \u05d1\u05e9\u05e2\u05d4 {time_str}\n"
         f"\u05e0\u05d5\u05e9\u05d0: {escape(appointment_subject) or 'N/A'}"
     )
-    _send(text)
+    _send(text, caller="notify_reschedule")
 
 
 def notify_reminder_sent(customer_name: str, customer_phone: str,
@@ -115,7 +122,7 @@ def notify_reminder_sent(customer_name: str, customer_phone: str,
         f"\u05e4\u05d2\u05d9\u05e9\u05d4: {date_str} \u05d1\u05e9\u05e2\u05d4 {time_str}\n"
         f"\u05e0\u05d5\u05e9\u05d0: {escape(appointment_subject) or 'N/A'}"
     )
-    _send(text)
+    _send(text, caller="notify_reminder_sent")
 
 
 def notify_invalid_phone(lead_id: int, lead_name: str, lead_email: str,
@@ -129,4 +136,4 @@ def notify_invalid_phone(lead_id: int, lead_name: str, lead_email: str,
         f"\u05e4\u05d2\u05d9\u05e9\u05d4: {escape(appointment_subject) or 'N/A'}\n\n"
         f"\u05e0\u05d0 \u05dc\u05e2\u05d3\u05db\u05df \u05d0\u05ea \u05d4\u05d8\u05dc\u05e4\u05d5\u05df \u05d1-CRM."
     )
-    _send(text)
+    _send(text, caller="notify_invalid_phone")
